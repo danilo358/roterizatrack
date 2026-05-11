@@ -350,6 +350,19 @@ const assignRoute = async () => {
   }
 };
 
+const instantCompleteRoute = async (vId: string, rId: string) => {
+  loading.value = true;
+  try {
+    const routeAddrs = addresses.value.filter(a => a.vehicle_id === vId && a.route_id === rId);
+    await Promise.all(routeAddrs.map(a => 
+      axios.patch(`${MANAGEMENT_URL}/addresses/${a.id}`, {
+        address: { status: 'concluido' }
+      })
+    ));
+    await fetchAll();
+  } catch (err) { console.error(err); } finally { loading.value = false; }
+};
+
 const cancelRoute = async (vId: string, rId: string) => {
   openModal(
     'Cancelar Rota',
@@ -549,19 +562,22 @@ const getVehiclePlate = (id: string) => {
         <button class="btn btn-primary !py-1 !px-4 text-[10px]" :disabled="!canCalculate" @click="calculateRoute(true)">
           <Zap :size="12" /> Melhor Caminho
         </button>
-      </div>
-
-      <div v-if="totalDistance" class="flex items-center gap-4 ml-auto">
-        <div class="flex flex-col items-end">
+        
+        <div v-if="totalDistance" class="flex flex-col items-start ml-2 pl-4 border-l border-border">
           <span class="text-[9px] font-bold uppercase text-muted">Total Estimado</span>
           <span class="text-sm font-bold text-primary">{{ totalDistance.toFixed(1) }} km</span>
         </div>
-        <button class="btn btn-primary !py-1 !px-6 text-[10px] !bg-success !border-success" @click="assignRoute" :disabled="loading">
+      </div>
+
+      <div class="flex items-center gap-4 ml-auto">
+        <span v-if="isOverCapacity" class="text-[11px] text-error font-bold flex items-center gap-1 bg-error/10 px-2 py-1 rounded">
+          <AlertCircle :size="12" /> Veículo tem capacidade de apenas {{ vehicles.find(v => v.id === selectedVehicleId)?.capacity || 0 }} pacotes
+        </span>
+        <button v-if="totalDistance" class="btn btn-primary !py-1 !px-6 text-[10px] !bg-success !border-success" @click="assignRoute" :disabled="loading">
           <Check :size="12" /> Confirmar Rota
         </button>
       </div>
     </div>
-
 
     <div class="dashboard-grid">
       <!-- Coluna Principal: Mapa -->
@@ -618,6 +634,7 @@ const getVehiclePlate = (id: string) => {
             </h2>
             <div class="flex gap-2 items-center">
               <span v-if="simulatingRoutes.has(route.route_id)" class="status-badge bg-primary/20 text-primary !text-[10px] mr-2">Simulação Ativa</span>
+              <button class="stop-action-btn success" title="Concluir Toda a Rota" @click="instantCompleteRoute(v.id, route.route_id)"><CheckCircle :size="14" /></button>
               <button class="stop-action-btn primary" title="Iniciar Simulação" @click="startSimulation(v.id, route.route_id)"><Play :size="14" /></button>
               <button class="stop-action-btn error" title="Cancelar Rota" @click="cancelRoute(v.id, route.route_id)"><Trash2 :size="14" /></button>
             </div>
@@ -631,21 +648,29 @@ const getVehiclePlate = (id: string) => {
                 'bg-primary/5': simulatedStopStatuses[stop.id] === 'A Caminho'
               }">
               <div class="flex items-center gap-3">
-                <span class="stop-number">{{ stopIdx + 1 }}</span>
+                <div class="w-5 h-5 rounded-full bg-primary flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                  {{ stopIdx + 1 }}
+                </div>
                 <p class="font-bold text-xs truncate" :title="`${stop.street}, ${stop.number}`">{{ stop.street }}, {{ stop.number }}</p>
               </div>
-              <div class="flex items-center">
+              <div class="flex items-center gap-3">
                 <span v-if="simulatedStopStatuses[stop.id]" :class="['sim-status-badge', simulatedStopStatuses[stop.id]?.toLowerCase().replace(' ', '-')]">
                   {{ simulatedStopStatuses[stop.id] }}
                 </span>
                 <span v-else-if="stop.status === 'concluido'" class="sim-status-badge concluido">Entregue</span>
                 <span v-else class="sim-status-badge aguardando">Aguardando</span>
+                
+                <button v-if="stop.status !== 'concluido'" @click="updateStopStatus(stop, 'concluido')" class="stop-action-btn success" title="Marcar como Entregue">
+                  <CheckCircle :size="14" />
+                </button>
               </div>
             </div>
           </div>
+
         </div>
       </template>
     </div>
+
 
 
 

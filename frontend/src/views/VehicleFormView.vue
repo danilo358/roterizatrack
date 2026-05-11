@@ -13,11 +13,49 @@ const form = ref({
   capacity: 0
 });
 
+const handlePlateInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  // Remove special characters, keep only letters and numbers
+  let raw = target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  let formatted = '';
+
+  for (let i = 0; i < raw.length; i++) {
+    const char = raw[i];
+    if (i < 3) {
+      if (/[A-Z]/.test(char)) formatted += char;
+    } else if (i === 3) {
+      if (/[0-9]/.test(char)) formatted += char;
+    } else if (i === 4) {
+      if (/[A-Z0-9]/.test(char)) formatted += char;
+    } else if (i < 7) {
+      if (/[0-9]/.test(char)) formatted += char;
+    }
+  }
+
+  // Add hyphen for display
+  if (formatted.length > 3) {
+    formatted = formatted.slice(0, 3) + '-' + formatted.slice(3);
+  }
+
+  form.value.plate = formatted;
+};
+
 const submitForm = async () => {
+  // Validate complete plate
+  if (form.value.plate.length !== 8) {
+    alert('A placa precisa estar no formato correto (Ex: ABC-1234 ou ABC-1A23)');
+    return;
+  }
+
   loading.value = true;
   try {
+    const payload = {
+      ...form.value,
+      plate: form.value.plate.replace('-', '')
+    };
+    
     await axios.post('http://localhost:3000/vehicles', {
-      vehicle: form.value
+      vehicle: payload
     });
     alert('Veículo cadastrado com sucesso!');
     router.push('/');
@@ -44,7 +82,7 @@ const submitForm = async () => {
         <div class="form-grid">
           <div class="form-group full">
             <label>Placa</label>
-            <input v-model="form.plate" type="text" required placeholder="Ex: ABC-1234" />
+            <input :value="form.plate" @input="handlePlateInput" type="text" required placeholder="Ex: ABC-1234" maxlength="8" />
           </div>
           
           <div class="form-group full">
@@ -54,7 +92,7 @@ const submitForm = async () => {
 
           <div class="form-group full">
             <label>Capacidade (Pacotes)</label>
-            <input v-model="form.capacity" type="number" required placeholder="10" />
+            <input v-model="form.capacity" type="number" required placeholder="10" min="1" />
           </div>
         </div>
 
