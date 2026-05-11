@@ -56,14 +56,17 @@ interface Address {
 // Endpoint to calculate suggested order
 app.post('/rotas/calcular', async (req: Request, res: Response) => {
   try {
-    const { veiculo_id, endereco_ids } = req.body;
+    const { veiculo_id, endereco_ids, optimized } = req.body;
+    const authHeader = req.headers['authorization'];
 
     if (!veiculo_id || !endereco_ids || !Array.isArray(endereco_ids)) {
       return res.status(400).json({ error: 'Missing veiculo_id or endereco_ids' });
     }
 
     // Fetch address details from Management Service
-    const addressesResponse = await axios.get(`${MANAGEMENT_SERVICE_URL}/addresses`);
+    const addressesResponse = await axios.get(`${MANAGEMENT_SERVICE_URL}/addresses`, {
+      headers: authHeader ? { 'Authorization': authHeader } : {}
+    });
     const allAddresses: Address[] = addressesResponse.data;
     
     const selectedAddresses = allAddresses.filter(addr => endereco_ids.includes(addr.id));
@@ -92,6 +95,33 @@ app.post('/rotas/calcular', async (req: Request, res: Response) => {
           }
           current = remaining.splice(closestIndex, 1)[0]!;
           currentRoute.push(current);
+        }
+
+        // 2-opt Refinement
+        let improved = true;
+        while (improved) {
+          improved = false;
+          for (let i = 0; i < currentRoute.length - 1; i++) {
+            for (let j = i + 2; j < currentRoute.length; j++) {
+              const p_i = currentRoute[i]!;
+              const p_i1 = currentRoute[i+1]!;
+              const p_j = currentRoute[j]!;
+              const p_j1 = currentRoute[j+1] || currentRoute[j]!;
+
+              const d1 = calculateDistance(Number(p_i.latitude), Number(p_i.longitude), Number(p_i1.latitude), Number(p_i1.longitude)) +
+                         calculateDistance(Number(p_j.latitude), Number(p_j.longitude), Number(p_j1.latitude), Number(p_j1.longitude));
+              
+              const d2 = calculateDistance(Number(p_i.latitude), Number(p_i.longitude), Number(p_j.latitude), Number(p_j.longitude)) +
+                         calculateDistance(Number(p_i1.latitude), Number(p_i1.longitude), Number(p_j1.latitude), Number(p_j1.longitude));
+              
+              if (d2 < d1) {
+                // Reverse sub-route
+                const sub = currentRoute.splice(i + 1, j - i);
+                currentRoute.splice(i + 1, 0, ...sub.reverse());
+                improved = true;
+              }
+            }
+          }
         }
 
         const totalD = getRouteDistance(currentRoute);
@@ -139,13 +169,11 @@ app.post('/rotas/calcular', async (req: Request, res: Response) => {
 app.post('/rotas/atribuir', async (req: Request, res: Response) => {
   try {
     const { veiculo_id, endereco_ids, route_id, total_distance_km } = req.body;
-
-    if (!veiculo_id || !endereco_ids || !Array.isArray(endereco_ids)) {
-      return res.status(400).json({ error: 'Missing veiculo_id or endereco_ids' });
-    }
+    const authHeader = req.headers['authorization'];
+    const headers = authHeader ? { 'Authorization': authHeader } : {};
 
     // Update each address in Management Service
-    const updatePromises = endereco_ids.map((id, index) => 
+    const updatePromises = endereco_ids.map((id: string, index: number) => 
       axios.patch(`${MANAGEMENT_SERVICE_URL}/addresses/${id}`, {
         address: {
           status: 'em rota',
@@ -153,7 +181,7 @@ app.post('/rotas/atribuir', async (req: Request, res: Response) => {
           route_id: route_id,
           sequence_number: index + 1 // Save the sequence order
         }
-      })
+      }, { headers })
     );
 
     await Promise.all(updatePromises);
@@ -165,7 +193,7 @@ app.post('/rotas/atribuir', async (req: Request, res: Response) => {
         [route_id, veiculo_id, total_distance_km || 0]
       );
       
-      const stopPromises = endereco_ids.map((id, idx) => 
+      const stopPromises = endereco_ids.map((id: string, idx: number) => 
         pool.query(
           'INSERT INTO route_stops (route_id, address_id, sequence_number) VALUES ($1, $2, $3)',
           [route_id, id, idx + 1]

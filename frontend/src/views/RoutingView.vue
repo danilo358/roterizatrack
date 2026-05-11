@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import axios from 'axios';
-import { Truck, MapPin, Navigation, CheckCircle, Map as MapIcon, Eye, EyeOff, Trash2, Check, X, AlertCircle, Play } from 'lucide-vue-next';
+import { Truck, MapPin, Navigation, CheckCircle, Map as MapIcon, Eye, EyeOff, Trash2, Check, X, AlertCircle, Play, Zap, ListOrdered, RefreshCw, Plus, TrendingUp } from 'lucide-vue-next';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { v4 as uuidv4 } from 'uuid';
 import ConfirmationModal from '../components/ConfirmationModal.vue';
+import { theme } from '../store/theme';
 
 // Haversine Distance Formula (Returns KM)
 const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -91,13 +92,41 @@ const handleModalConfirm = () => {
   modalConfig.value.onConfirm();
 };
 
+let currentTileLayer: L.TileLayer | null = null;
+
 const initMap = () => {
   if (map) return;
   map = L.map(mapContainer.value!).setView([-23.55052, -46.633308], 12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  updateMapTiles();
   markersGroup.addTo(map);
   routesGroup.addTo(map);
+
+  // Fix for map not rendering in grid layouts
+  setTimeout(() => {
+    map?.invalidateSize();
+  }, 100);
 };
+
+const updateMapTiles = () => {
+  if (!map) return;
+  if (currentTileLayer) map.removeLayer(currentTileLayer);
+  
+  const isDark = theme.value === 'dark';
+  const tileUrl = isDark 
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+    
+  currentTileLayer = L.tileLayer(tileUrl, {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 20
+  }).addTo(map);
+};
+
+// Watch for theme changes to update map style
+watch(theme, () => {
+  updateMapTiles();
+});
 
 const updateMarkers = () => {
   if (!map) return;
@@ -113,16 +142,26 @@ const updateMarkers = () => {
       iconSize: [30, 42],
       iconAnchor: [15, 42]
     });
-    L.marker([Number(addr.latitude), Number(addr.longitude)], { icon })
+    
+    const marker = L.marker([Number(addr.latitude), Number(addr.longitude)], { icon })
       .addTo(markersGroup)
-      .bindPopup(`<b>${addr.street}</b>`);
+      .on('click', () => {
+        toggleAddress(addr.id);
+      });
+    
+    if (label) marker.bindTooltip(`Parada ${label}`, { permanent: false, direction: 'top' });
+    else marker.bindTooltip(addr.street, { permanent: false, direction: 'top' });
+    
     allPoints.push([Number(addr.latitude), Number(addr.longitude)]);
   };
 
   if (showUnassigned.value) {
-    unassignedAddresses.value.forEach(a => {
-      const isSelected = selectedAddressIds.value.includes(a.id);
-      addMarker(a, isSelected ? '#f59e0b' : '#94a3b8');
+    unassignedAddresses.value.forEach((addr) => {
+      const selectedIdx = selectedAddressIds.value.indexOf(addr.id);
+      const isSelected = selectedIdx > -1;
+      const color = isSelected ? '#6366f1' : '#94a3b8';
+      const label = isSelected ? (selectedIdx + 1).toString() : '';
+      addMarker(addr, color, label);
     });
   }
 
@@ -151,6 +190,15 @@ const updateMarkers = () => {
       }
     });
   });
+
+  if (selectedAddressIds.value.length > 1) {
+    const manualLatLngs = selectedAddressIds.value
+      .map(id => addresses.value.find(a => a.id === id))
+      .filter(a => !!a)
+      .map(a => [Number(a!.latitude), Number(a!.longitude)] as L.LatLngExpression);
+    
+    L.polyline(manualLatLngs, { color: '#6366f1', weight: 3, opacity: 0.4, dashArray: '5, 10' }).addTo(routesGroup);
+  }
 
   if (suggestedRoute.value && routeGeometry.value) {
     L.geoJSON(routeGeometry.value, { style: { color: '#6366f1', weight: 6 } }).addTo(routesGroup);
@@ -462,250 +510,178 @@ const startSimulation = async (vId: string, rId: string) => {
 
 const unassignedAddresses = computed(() => addresses.value.filter(a => !a.route_id && a.status === 'pendente'));
 
+const canCalculate = computed(() => {
+  return selectedVehicleId.value && selectedAddressIds.value.length > 0 && !loading.value && !isOverCapacity.value;
+});
+
+const currentlySimulatedRoute = computed(() => {
+  if (simulatingRoutes.value.size === 0) return null;
+  const routeId = Array.from(simulatingRoutes.value)[0];
+  for (const vId in groupedRoutes.value) {
+    const route = groupedRoutes.value[vId].find(r => r.route_id === routeId);
+    if (route) return { ...route, vehicle_plate: vehicles.value.find(v => v.id === vId)?.plate };
+  }
+  return null;
+});
+
 const getVehiclePlate = (id: string) => {
   return vehicles.value.find(v => v.id === id)?.plate || 'N/A';
 };
 </script>
 
 <template>
-  <div class="grid">
-    <!-- Left Column: Address Management -->
-    <section>
-      <div class="card mb-6">
-        <h2 class="section-title mb-4"><MapIcon :size="20" /> Mapa de Entregas</h2>
+  <div class="container">
+    <header class="header">
+      <div class="flex items-center gap-3">
+        <h1 class="title">RoterizaTrack</h1>
+        <span class="status-badge bg-primary/10 text-primary !text-[9px]">LIVE OPS</span>
+      </div>
+      <button class="btn btn-secondary !py-1 !px-3 text-[10px]" @click="fetchAll" :disabled="loading">
+        <RefreshCw :size="12" :class="{ 'animate-spin': loading }" />
+      </button>
+    </header>
+
+    <div class="toolbar">
+      <div class="flex items-center gap-2">
+        <button class="btn btn-secondary !py-1 !px-4 text-[10px]" :disabled="!canCalculate" @click="calculateRoute(false)">
+          <Navigation :size="12" /> Ordem Manual
+        </button>
+        <button class="btn btn-primary !py-1 !px-4 text-[10px]" :disabled="!canCalculate" @click="calculateRoute(true)">
+          <Zap :size="12" /> Melhor Caminho
+        </button>
+      </div>
+
+      <div v-if="totalDistance" class="flex items-center gap-4 ml-auto">
+        <div class="flex flex-col items-end">
+          <span class="text-[9px] font-bold uppercase text-muted">Total Estimado</span>
+          <span class="text-sm font-bold text-primary">{{ totalDistance.toFixed(1) }} km</span>
+        </div>
+        <button class="btn btn-primary !py-1 !px-6 text-[10px] !bg-success !border-success" @click="assignRoute" :disabled="loading">
+          <Check :size="12" /> Confirmar Rota
+        </button>
+      </div>
+    </div>
+
+
+    <div class="dashboard-grid">
+      <!-- Coluna Principal: Mapa -->
+      <main class="card !p-0 overflow-hidden map-area">
         <div ref="mapContainer" class="map-container"></div>
-      </div>
+      </main>
 
-      <div class="card">
-        <div class="flex justify-between items-center mb-6">
-          <h2 class="section-title mb-0"><MapPin :size="20" /> Gerenciamento</h2>
-          <div class="flex gap-2">
-            <button class="btn-icon" @click="toggleAllVisible" :title="isEverythingVisible ? 'Esconder Todos' : 'Mostrar Todos'">
-              <EyeOff v-if="isEverythingVisible" :size="20" />
-              <Eye v-else :size="20" />
-            </button>
-          </div>
-        </div>
-        
-        <!-- Unassigned Section -->
-        <div class="mb-8">
-          <div class="flex justify-between items-center mb-3 mt-4">
-            <h3 class="text-sm font-bold uppercase text-muted">Aguardando Rota</h3>
-            <button class="btn-icon" @click="showUnassigned = !showUnassigned">
-              <Eye v-if="showUnassigned" :size="18" />
-              <EyeOff v-else :size="18" />
-            </button>
-          </div>
-          <div class="item-list" v-if="showUnassigned">
-            <div v-for="addr in unassignedAddresses" :key="addr.id" class="item"
-              :class="{ 'selected': selectedAddressIds.includes(addr.id) }"
-              @click="toggleAddress(addr.id)">
-              <div class="item-header">
-                <div>
-                  <strong>{{ addr.street }}, {{ addr.number }}</strong>
-                  <p class="text-sm text-muted">{{ addr.city }} - {{ addr.state }}</p>
-                </div>
-                <span class="status-badge status-pendente">pendente</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Vehicle Routes -->
-        <div v-for="v in vehicles" :key="v.id" class="mb-8">
-          <h3 class="text-xs font-bold uppercase text-primary mb-3">{{ v.plate }} - {{ v.model }}</h3>
-          <div v-for="(route, idx) in groupedRoutes[v.id]" :key="route.route_id" class="route-group mb-4" :class="{ 'opacity-60': route.status === 'concluido' }">
-            <div class="flex justify-between items-center p-3 bg-surface-light rounded-t-lg border border-border">
-              <span class="text-xs font-bold uppercase flex items-center gap-2">
-                <CheckCircle v-if="route.status === 'concluido'" :size="14" class="text-success" />
-                Rota {{ idx + 1 }} &nbsp; | &nbsp; {{ route.addresses.length }} paradas
-              </span>
-              <div class="flex gap-2">
-                <button v-if="route.status !== 'concluido'" class="stop-action-btn success" @click="completeRoute(v.id, route.route_id)" title="Concluir Rota">
-                  <CheckCircle :size="16" />
-                </button>
-                <button v-if="route.status !== 'concluido'" class="stop-action-btn primary" @click="startSimulation(v.id, route.route_id)" title="Simular Entrega">
-                  <Play :size="16" />
-                </button>
-                <button class="stop-action-btn error" @click="cancelRoute(v.id, route.route_id)" title="Cancelar Rota">
-                  <Trash2 :size="16" />
-                </button>
-                <button class="stop-action-btn" @click="toggleRouteVisibility(v.id, route.route_id)">
-                  <Eye v-if="visibleRoutes.has(`${v.id}-${route.route_id}`)" :size="16" />
-                  <EyeOff v-else :size="16" />
-                </button>
-              </div>
-            </div>
-            <div class="item-list-compact border-x border-b border-border rounded-b-lg p-2" v-if="visibleRoutes.has(`${v.id}-${route.route_id}`)">
-              <div v-for="(addr, aIdx) in route.addresses" :key="addr.id" class="item-compact flex justify-between items-center">
-                <div class="flex items-center gap-2">
-                  <span class="stop-number">{{ aIdx + 1 }}</span>
-                  <div :class="{ 'line-through text-muted': addr.status === 'concluido' }">
-                    <span class="text-xs">{{ addr.street }}, {{ addr.number }}</span>
-                    <span v-if="simulatedStopStatuses[addr.id]" :class="['sim-status-badge', simulatedStopStatuses[addr.id]?.toLowerCase().replace(' ', '-')]">
-                      {{ simulatedStopStatuses[addr.id] }}
-                    </span>
-                  </div>
-                </div>
-                <div class="flex gap-2">
-                  <button v-if="addr.status !== 'concluido'" class="stop-action-btn success" @click="updateStopStatus(addr, 'concluido')" title="Concluir Parada">
-                    <Check :size="14" />
-                  </button>
-                  <button v-if="addr.status !== 'concluido'" class="stop-action-btn error" @click="updateStopStatus(addr, 'pendente')" title="Remover da Rota">
-                    <X :size="14" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <div v-if="addresses.length === 0" class="empty-state">
-          Nenhum endereço cadastrado.
-        </div>
-      </div>
-    </section>
-
-    <!-- Right Column: Routing Controls -->
-    <aside>
-      <div class="card">
-        <h2 class="section-title"><Navigation :size="20" /> Criar Rota</h2>
-        
-        <div class="mb-6">
-          <label class="block text-sm font-medium mb-2">Selecionar Veículo</label>
+      <!-- Coluna Lateral -->
+      <div class="side-panels">
+        <!-- 1. Pontos Disponíveis -->
+        <aside class="card">
+          <h2 class="section-title"><MapPin :size="14" /> Pendentes</h2>
           <div class="item-list">
-            <div 
-              v-for="v in vehicles" 
-              :key="v.id"
-              class="item"
-              :class="{ 'selected': selectedVehicleId === v.id }"
-              @click="selectedVehicleId = v.id"
-            >
-              <div class="flex items-center gap-3">
-                <Truck :size="20" class="text-primary" />
-                <div>
-                  <strong>{{ v.plate }}</strong>
-                  <p class="text-xs text-muted">{{ v.model }} (Cap: {{ v.capacity }})</p>
+            <div v-for="addr in unassignedAddresses" 
+              :key="addr.id" 
+              class="item" 
+              :class="{ 'selected-success': selectedAddressIds.includes(addr.id) }"
+              @click="toggleAddress(addr.id)">
+              <div class="flex items-center gap-2">
+                <div v-if="selectedAddressIds.includes(addr.id)" class="bg-success text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0">
+                  {{ selectedAddressIds.indexOf(addr.id) + 1 }}
                 </div>
+                <MapPin v-else :size="14" class="text-muted shrink-0" />
+                <p class="font-bold truncate text-[11px]">{{ addr.street }}, {{ addr.number }}</p>
               </div>
             </div>
           </div>
-        </div>
+        </aside>
 
-        <div class="mb-6">
-          <div v-if="isOverCapacity" class="error-badge mb-4">
-            Atenção: Você selecionou {{ selectedAddressIds.length }} endereços, mas este veículo suporta apenas {{ vehicles.find(v => v.id === selectedVehicleId)?.capacity }} paradas.
+        <!-- 2. Seleção de Veículo -->
+        <aside class="card">
+          <h2 class="section-title"><Truck :size="14" /> Veículo da Rota</h2>
+          <div class="item-list">
+            <div v-for="v in vehicles" :key="v.id" class="item !p-2" :class="{ 'selected-success': selectedVehicleId === v.id }" @click="selectedVehicleId = v.id">
+              <div class="flex items-center gap-2">
+                <Truck :size="14" :class="selectedVehicleId === v.id ? 'text-success' : 'text-muted'" />
+                <span class="text-[10px] font-bold" :class="selectedVehicleId === v.id ? 'text-success' : ''">{{ v.plate }} ({{ v.model }})</span>
+              </div>
+            </div>
           </div>
-          <div class="flex gap-2">
-            <button 
-              class="btn btn-secondary w-full" 
-              :disabled="!selectedVehicleId || selectedAddressIds.length === 0 || loading || isOverCapacity"
-              @click="calculateRoute(false)"
-            >
-              Lat/Lon
-            </button>
-            <button 
-              class="btn btn-primary w-full" 
-              :disabled="!selectedVehicleId || selectedAddressIds.length === 0 || loading || isOverCapacity"
-              @click="calculateRoute(true)"
-            >
-              Melhor Rota
-            </button>
-          </div>
-        </div>
+        </aside>
+      </div>
 
-        <!-- Suggested Route Display -->
-        <div v-if="suggestedRoute" class="mt-8 pt-8 border-t border-border">
+    </div>
+
+    <!-- Monitor de Operações (Lista Grande Embaixo) -->
+    <div class="monitor-section">
+      <template v-for="v in vehicles" :key="v.id">
+        <div v-for="(route, idx) in groupedRoutes[v.id]" :key="route.route_id" class="card mb-4">
           <div class="flex justify-between items-center mb-4">
-            <h3 class="text-md font-bold flex items-center gap-2">
-              <CheckCircle :size="18" class="text-success" /> Rota Sugerida
-            </h3>
-            <span class="status-badge status-em-rota" v-if="totalDistance">
-              {{ totalDistance.toFixed(2) }} km
-            </span>
-          </div>
-          <div class="item-list mb-6">
-            <div v-for="(stop, index) in suggestedRoute" :key="stop.id" class="flex gap-3">
-              <div class="flex flex-col items-center">
-                <div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-xs font-bold">
-                  {{ index + 1 }}
-                </div>
-                <div v-if="index < suggestedRoute.length - 1" class="w-0.5 h-full bg-border my-1"></div>
-              </div>
-              <div class="flex-1 pb-4">
-                <p class="text-sm font-semibold">{{ stop.street }}</p>
-              </div>
+            <h2 class="section-title mb-0 flex items-center gap-2">
+              <Truck :size="18" class="text-primary" /> 
+              Veículo em Rota: <span class="text-primary">{{ v.plate }} ({{ v.model }})</span>
+            </h2>
+            <div class="flex gap-2 items-center">
+              <span v-if="simulatingRoutes.has(route.route_id)" class="status-badge bg-primary/20 text-primary !text-[10px] mr-2">Simulação Ativa</span>
+              <button class="stop-action-btn primary" title="Iniciar Simulação" @click="startSimulation(v.id, route.route_id)"><Play :size="14" /></button>
+              <button class="stop-action-btn error" title="Cancelar Rota" @click="cancelRoute(v.id, route.route_id)"><Trash2 :size="14" /></button>
             </div>
           </div>
           
-          <button 
-            class="btn btn-primary w-full mt-4" 
-            @click="assignRoute"
-            :disabled="loading"
-          >
-            <Truck :size="18" /> Confirmar Atribuição
-          </button>
+          <div class="flex flex-col mt-2">
+            <div v-for="(stop, stopIdx) in route.addresses" :key="stop.id" 
+              class="monitor-row" 
+              :class="{ 
+                'bg-success/5': stop.status === 'concluido',
+                'bg-primary/5': simulatedStopStatuses[stop.id] === 'A Caminho'
+              }">
+              <div class="flex items-center gap-3">
+                <span class="stop-number">{{ stopIdx + 1 }}</span>
+                <p class="font-bold text-xs truncate" :title="`${stop.street}, ${stop.number}`">{{ stop.street }}, {{ stop.number }}</p>
+              </div>
+              <div class="flex items-center">
+                <span v-if="simulatedStopStatuses[stop.id]" :class="['sim-status-badge', simulatedStopStatuses[stop.id]?.toLowerCase().replace(' ', '-')]">
+                  {{ simulatedStopStatuses[stop.id] }}
+                </span>
+                <span v-else-if="stop.status === 'concluido'" class="sim-status-badge concluido">Entregue</span>
+                <span v-else class="sim-status-badge aguardando">Aguardando</span>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-    </aside>
-    <!-- Confirmation Modal -->
-    <ConfirmationModal 
-      :show="modalShow"
-      :title="modalConfig.title"
-      :message="modalConfig.message"
-      @confirm="handleModalConfirm"
-      @cancel="modalShow = false"
-    />
+      </template>
+    </div>
+
+
+
+
+    <ConfirmationModal :show="modalShow" :title="modalConfig.title" :message="modalConfig.message" @confirm="handleModalConfirm" @cancel="modalShow = false" />
   </div>
 </template>
 
 <style scoped>
-.map-container { height: 450px; width: 100%; border-radius: var(--radius); z-index: 1; }
+.map-container { 
+  width: 100%; 
+  height: 100%; 
+  border-radius: var(--radius); 
+  z-index: 1; 
+}
 .route-group { border-radius: var(--radius); overflow: hidden; }
 .bg-surface-light { background: rgba(255, 255, 255, 0.05); }
-.item-list-compact { display: flex; flex-direction: column; gap: 0.25rem; background: rgba(0, 0, 0, 0.2); }
-.item-compact { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
-.stop-number { width: 18px; height: 18px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; }
-.btn-icon { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 4px; }
-.btn-icon:hover { background: rgba(255, 255, 255, 0.1); color: var(--text); }
-.btn-sm { padding: 0.4rem 0.8rem; font-size: 0.75rem; }
-:deep(.marker-pin) { width: 30px; height: 30px; border-radius: 50% 50% 50% 0; position: absolute; transform: rotate(-45deg) translateY(-15px); left: 50%; top: 50%; margin: -15px 0 0 -15px; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: bold; border: 2px solid white; transition: all 0.3s; }
-:deep(.marker-pin:hover) { transform: rotate(-45deg) translateY(-20px) scale(1.2); z-index: 1000; }
 
-/* Fix for Leaflet rotation of labels */
-:deep(.marker-pin > span) {
-  transform: rotate(45deg);
-  z-index: 10;
+.stop-number { 
+  width: 16px; 
+  height: 16px; 
+  background: var(--primary); 
+  border-radius: 50%; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  font-size: 8px; 
+  font-weight: bold; 
+  color: white;
+  flex-shrink: 0;
 }
 
-.mb-6 { margin-bottom: 1.5rem; }
-.mb-8 { margin-bottom: 2rem; }
-.mt-4 { margin-top: 1rem; }
-.mt-8 { margin-top: 2rem; }
-.pt-8 { padding-top: 2rem; }
-.border-t { border-top: 1px solid var(--border); }
-.w-full { width: 100%; }
-.flex { display: flex; }
-.items-center { align-items: center; }
-.justify-center { justify-content: center; }
-.gap-2 { gap: 0.5rem; }
-.gap-3 { gap: 0.75rem; }
-.gap-4 { gap: 1rem; }
-.flex-col { flex-direction: column; }
-.flex-1 { flex: 1; }
-.text-sm { font-size: 0.875rem; }
-.text-xs { font-size: 0.75rem; }
-.font-bold { font-weight: 700; }
-.font-semibold { font-weight: 600; }
-.uppercase { text-transform: uppercase; }
-.text-primary { color: var(--primary); }
-.text-muted { color: var(--text-muted); }
-.text-success { color: var(--success); }
-.opacity-50 { opacity: 0.5; }
 .stop-action-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.03);
   display: flex;
@@ -716,46 +692,54 @@ const getVehiclePlate = (id: string) => {
   color: var(--text-muted);
 }
 
-.stop-action-btn.success:hover {
-  background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.3);
-  color: var(--success);
-}
+.stop-action-btn:hover { background: rgba(255, 255, 255, 0.1); }
+.stop-action-btn.primary:hover { color: var(--primary); border-color: var(--primary); }
+.stop-action-btn.error:hover { color: var(--error); border-color: var(--error); }
 
-.stop-action-btn.error:hover {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: var(--error);
-}
 .sim-status-badge {
-  font-size: 9px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 8px;
   font-weight: 800;
   text-transform: uppercase;
-  padding: 1px 4px;
-  border-radius: 4px;
-  margin-left: 6px;
+  letter-spacing: 0.05em;
 }
 
-.sim-status-badge.aguardando { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
-.sim-status-badge.a-caminho { background: rgba(59, 130, 246, 0.1); color: #3b82f6; animation: pulse-blue 2s infinite; }
-.sim-status-badge.proxima-parada { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
 .sim-status-badge.concluido { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+.sim-status-badge.a-caminho { background: rgba(59, 130, 246, 0.1); color: #3b82f6; animation: pulse 2s infinite; }
+.sim-status-badge.proxima-parada { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+.sim-status-badge.aguardando { background: rgba(255, 255, 255, 0.05); color: var(--text-muted); }
 
-@keyframes pulse-blue {
-  0% { opacity: 0.6; }
-  50% { opacity: 1; }
-  100% { opacity: 0.6; }
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+:deep(.marker-pin) { 
+  width: 24px; 
+  height: 24px; 
+  border-radius: 50% 50% 50% 0; 
+  position: absolute; 
+  transform: rotate(-45deg) translateY(-12px); 
+  left: 50%; 
+  top: 50%; 
+  margin: -12px 0 0 -12px; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  color: white; 
+  font-size: 10px; 
+  font-weight: bold; 
+  border: 1px solid white; 
+}
+
+:deep(.marker-pin > span) {
+  transform: rotate(45deg);
 }
 
 .moving-truck {
-  font-size: 24px;
+  font-size: 20px;
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-  transition: transform 0.1s linear;
-}
-
-.stop-action-btn.primary:hover {
-  background: rgba(99, 102, 241, 0.1);
-  border-color: rgba(99, 102, 241, 0.3);
-  color: var(--primary);
 }
 </style>

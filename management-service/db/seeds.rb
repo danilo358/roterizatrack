@@ -4,7 +4,7 @@ Vehicle.destroy_all
 Driver.destroy_all
 User.destroy_all
 
-User.create!(email: 'admin@trackland.com', password: 'password123')
+User.create!(email: 'admin@roterizatrack.com', password: 'password123', name: 'Administrador', role: 'admin')
 
 # Create Vehicles
 v1 = Vehicle.create!(plate: 'BRA2E19', model: 'Fiat Fiorino', capacity: 15)

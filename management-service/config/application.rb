@@ -20,6 +20,9 @@ module ManagementService
     config.load_defaults 7.1
     config.api_only = true
     config.hosts << "management-service"
+    config.hosts << "localhost"
+    config.hosts << "127.0.0.1"
+    config.hosts << "www.example.com"
 
     config.generators do |g|
       g.orm :active_record, primary_key_type: :uuid

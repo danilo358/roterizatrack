@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router';
-import { Map, Plus, Truck, MapPin, BarChart3, LogOut } from 'lucide-vue-next';
-import { computed } from 'vue';
+import { Map, Plus, Truck, MapPin, BarChart3, LogOut, Sun, Moon } from 'lucide-vue-next';
+import { computed, ref, onMounted } from 'vue';
+
+import { theme, toggleTheme } from './store/theme';
 
 const router = useRouter();
 const route = useRoute();
@@ -42,7 +44,13 @@ const handleLogout = () => {
         </router-link>
       </div>
 
-      <div class="mt-auto px-4">
+      <div class="mt-auto px-4 flex flex-column gap-3">
+        <button class="theme-toggle-btn" @click="toggleTheme" :title="theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'">
+          <Sun v-if="theme === 'dark'" :size="18" />
+          <Moon v-else :size="18" />
+          <span>{{ theme === 'dark' ? 'Modo Claro' : 'Modo Escuro' }}</span>
+        </button>
+
         <button class="logout-btn" @click="handleLogout">
           <LogOut :size="16" />
           <span>Sair do Sistema</span>
@@ -139,6 +147,35 @@ const handleLogout = () => {
 
 .content.no-sidebar {
   margin-left: 0;
+}
+
+.mt-auto {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.theme-toggle-btn {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  background: var(--surface-light);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.theme-toggle-btn:hover {
+  border-color: var(--primary);
+  background: var(--surface);
 }
 
 .logout-btn {

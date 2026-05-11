@@ -5,7 +5,7 @@ import axios from 'axios';
 import { LogIn, Lock, Mail, Loader2 } from 'lucide-vue-next';
 
 const router = useRouter();
-const email = ref('admin@trackland.com');
+const email = ref('admin@roterizatrack.com');
 const password = ref('password123');
 const loading = ref(false);
 const error = ref('');
@@ -14,7 +14,7 @@ const handleLogin = async () => {
   loading.value = true;
   error.value = '';
   try {
-    const res = await axios.post('http://localhost:3000/login', {
+    const res = await axios.post('http://localhost:3000/auth/login', {
       email: email.value,
       password: password.value
     });
@@ -34,10 +34,10 @@ const handleLogin = async () => {
     <div class="login-card">
       <div class="login-header">
         <div class="logo">
-          <Truck :size="40" class="text-primary" />
+          <img src="/favicon.png" alt="Logo" class="logo-img" />
         </div>
-        <h1>Mini Delivery Router</h1>
-        <p>Acesse sua conta para gerenciar rotas</p>
+        <h1>RoterizaTrack</h1>
+        <p>Logística inteligente e simplificada</p>
       </div>
 
       <form @submit.prevent="handleLogin" class="login-form">
@@ -67,7 +67,7 @@ const handleLogin = async () => {
       </form>
       
       <div class="login-footer">
-        <p>Login de teste: admin@trackland.com / password123</p>
+        <p>Acesso: admin@roterizatrack.com / password123</p>
       </div>
     </div>
   </div>
@@ -79,49 +79,54 @@ const handleLogin = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.15), transparent),
-              radial-gradient(circle at bottom left, rgba(236, 72, 153, 0.1), transparent);
+  background: var(--bg);
 }
 
 .login-card {
   width: 100%;
   max-width: 400px;
-  padding: 2.5rem;
+  padding: 3rem 2.5rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 24px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(10px);
+  border-radius: 28px;
+  box-shadow: var(--shadow);
 }
 
 .login-header {
   text-align: center;
-  margin-bottom: 2.5rem;
+  margin-bottom: 3rem;
 }
 
 .logo {
-  width: 80px;
-  height: 80px;
-  background: rgba(99, 102, 241, 0.1);
-  border-radius: 20px;
+  width: 72px;
+  height: 72px;
+  background: var(--surface-light);
+  border: 1px solid var(--border);
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 1.5rem;
 }
 
+.logo-img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
 .login-header h1 {
-  font-size: 1.5rem;
-  font-weight: 800;
+  font-size: 1.75rem;
+  font-weight: 900;
   margin-bottom: 0.5rem;
-  background: linear-gradient(to right, #fff, #94a3b8);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text);
+  letter-spacing: -0.03em;
 }
 
 .login-header p {
   color: var(--text-muted);
-  font-size: 0.875rem;
+  font-size: 0.9rem;
+  font-weight: 500;
 }
 
 .form-group {
@@ -130,10 +135,12 @@ const handleLogin = async () => {
 
 .form-group label {
   display: block;
-  font-size: 0.875rem;
-  font-weight: 500;
-  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
   color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .input-icon {
@@ -142,7 +149,7 @@ const handleLogin = async () => {
 
 .input-icon svg {
   position: absolute;
-  left: 12px;
+  left: 16px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-muted);
@@ -150,34 +157,39 @@ const handleLogin = async () => {
 
 .input-icon input {
   width: 100%;
-  padding: 0.75rem 0.75rem 0.75rem 42px;
-  background: rgba(255, 255, 255, 0.05);
+  padding: 0.9rem 1rem 0.9rem 48px;
+  background: var(--surface-light);
   border: 1px solid var(--border);
   border-radius: 12px;
-  color: white;
-  transition: all 0.2s;
+  color: var(--text);
+  font-size: 1rem;
+  transition: all var(--transition);
 }
 
 .input-icon input:focus {
   outline: none;
   border-color: var(--primary);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
 }
 
 .error-badge {
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.2);
-  color: #f87171;
-  padding: 0.75rem;
+  color: var(--error);
+  padding: 0.85rem;
   border-radius: 12px;
-  font-size: 0.875rem;
+  font-size: 0.85rem;
+  font-weight: 600;
   text-align: center;
+  margin-bottom: 1.5rem;
 }
 
 .login-footer {
-  margin-top: 2rem;
+  margin-top: 2.5rem;
   text-align: center;
   font-size: 0.75rem;
+  font-weight: 500;
   color: var(--text-muted);
 }
 
@@ -189,4 +201,7 @@ const handleLogin = async () => {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+.w-full { width: 100%; }
+.mb-4 { margin-bottom: 1rem; }
 </style>

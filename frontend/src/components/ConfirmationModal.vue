@@ -58,7 +58,7 @@ defineEmits(['confirm', 'cancel']);
   max-width: 400px;
   border-radius: 24px;
   border: 1px solid var(--border);
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow);
   overflow: hidden;
   padding: 1.5rem;
 }
@@ -73,7 +73,7 @@ defineEmits(['confirm', 'cancel']);
 .modal-icon {
   width: 48px;
   height: 48px;
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(59, 130, 246, 0.1);
   color: var(--primary);
   border-radius: 14px;
   display: flex;
@@ -88,11 +88,11 @@ defineEmits(['confirm', 'cancel']);
   cursor: pointer;
   padding: 0.5rem;
   border-radius: 50%;
-  transition: all 0.2s;
+  transition: all var(--transition);
 }
 
 .close-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-light);
   color: var(--text);
 }
 
@@ -120,17 +120,17 @@ defineEmits(['confirm', 'cancel']);
   border-radius: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition);
 }
 
 .btn-cancel {
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
   border: 1px solid var(--border);
   color: var(--text);
 }
 
 .btn-cancel:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-light);
 }
 
 .btn-confirm {
@@ -140,7 +140,7 @@ defineEmits(['confirm', 'cancel']);
 }
 
 .btn-confirm:hover {
-  background: #4f46e5;
+  background: var(--primary-hover);
   transform: translateY(-1px);
 }
 
