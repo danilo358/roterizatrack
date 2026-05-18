@@ -1,16 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import axios from 'axios';
-import { Truck, MapPin, Navigation, CheckCircle, Map as MapIcon, Eye, EyeOff, Trash2, Check, X, AlertCircle, Play, Zap, ListOrdered, RefreshCw, Plus, TrendingUp } from 'lucide-vue-next';
+import { Truck, MapPin, Navigation, CheckCircle, Map as Trash2, Check, AlertCircle, Play, Zap, RefreshCw } from 'lucide-vue-next';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { v4 as uuidv4 } from 'uuid';
 import ConfirmationModal from '../components/ConfirmationModal.vue';
 import { theme } from '../store/theme';
 
-// Haversine Distance Formula (Returns KM)
 const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-  const R = 6371; // Radius of the earth in km
+  const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = 
@@ -52,24 +51,19 @@ const suggestedRoute = ref<Address[] | null>(null);
 const totalDistance = ref<number | null>(null);
 const routeGeometry = ref<any | null>(null);
 
-// Visibility Control
 const visibleRoutes = ref<Set<string>>(new Set());
 const showUnassigned = ref(true);
 const routesGeometryCache = ref<Record<string, any>>({});
 
-// Simulation State
 const simulatingRoutes = ref<Set<string>>(new Set());
-const simulatedStopStatuses = ref<Record<string, string>>({}); // stopId -> status text
+const simulatedStopStatuses = ref<Record<string, string>>({});
 const vehicleMarkers = ref<Record<string, L.Marker>>({});
 
 const MANAGEMENT_URL = 'http://localhost:3000';
 const ROUTING_URL = 'http://localhost:3001';
 
-// Map variables
 let map: L.Map | null = null;
 const mapContainer = ref<HTMLElement | null>(null);
-const markers = ref<L.Marker[]>([]);
-const routeLine = ref<L.Polyline | null>(null);
 
 const markersGroup = L.layerGroup();
 const routesGroup = L.layerGroup();
@@ -78,7 +72,6 @@ const routeColors = [
   '#6366f1', '#ec4899', '#10b981', '#f59e0b', '#3b82f6', '#8b5cf6', '#ef4444'
 ];
 
-// Modal state
 const modalShow = ref(false);
 const modalConfig = ref({ title: '', message: '', onConfirm: () => {} });
 
@@ -101,7 +94,6 @@ const initMap = () => {
   markersGroup.addTo(map);
   routesGroup.addTo(map);
 
-  // Fix for map not rendering in grid layouts
   setTimeout(() => {
     map?.invalidateSize();
   }, 100);
@@ -123,7 +115,6 @@ const updateMapTiles = () => {
   }).addTo(map);
 };
 
-// Watch for theme changes to update map style
 watch(theme, () => {
   updateMapTiles();
 });
@@ -173,16 +164,12 @@ const updateMarkers = () => {
       if (visibleRoutes.value.has(routeKey)) {
         const color = routeColors[colorIdx % routeColors.length]!;
         route.addresses.forEach((a, idx) => addMarker(a, color, (idx + 1).toString()));
-        
-        // Draw Route Line
         const latLngs = route.addresses.map(a => [Number(a.latitude), Number(a.longitude)] as L.LatLngExpression);
         
-        // Try to use cached geometry if available, otherwise draw straight lines
         if (routesGeometryCache.value[routeKey]) {
           L.geoJSON(routesGeometryCache.value[routeKey], { style: { color, weight: 5, opacity: 0.6 } }).addTo(routesGroup);
         } else if (latLngs.length > 1) {
           L.polyline(latLngs, { color, weight: 4, opacity: 0.5, dashArray: '5, 10' }).addTo(routesGroup);
-          // Async fetch and cache geometry
           fetchAndCacheGeometry(routeKey, route.addresses);
         }
         
@@ -219,21 +206,29 @@ const fetchAndCacheGeometry = async (key: string, stops: Address[]) => {
     const res = await axios.get(osrmUrl);
     if (res.data.routes?.length > 0) {
       routesGeometryCache.value[key] = res.data.routes[0].geometry;
-      updateMarkers(); // Re-render with new geometry
+      updateMarkers();
     }
   } catch (e) { console.error('Cache geometry error:', e); }
 };
 
 const fetchAll = async () => {
   try {
-    const [addrRes, vehRes] = await Promise.all([
+    const [addrRes, vehRes, routesRes] = await Promise.all([
       axios.get(`${MANAGEMENT_URL}/addresses`),
-      axios.get(`${MANAGEMENT_URL}/vehicles`)
+      axios.get(`${MANAGEMENT_URL}/vehicles`),
+      axios.get(`${ROUTING_URL}/rotas`)
     ]);
     addresses.value = addrRes.data;
     vehicles.value = vehRes.data;
     
-    // Auto-show new routes if any
+    if (routesRes.data) {
+      routesRes.data.forEach((r: any) => {
+        if (r.geometry) {
+          routesGeometryCache.value[`${r.vehicle_id}-${r.id}`] = typeof r.geometry === 'string' ? JSON.parse(r.geometry) : r.geometry;
+        }
+      });
+    }
+    
     addresses.value.forEach(a => {
       if (a.vehicle_id && a.route_id) {
         visibleRoutes.value.add(`${a.vehicle_id}-${a.route_id}`);
@@ -251,37 +246,10 @@ const fetchAll = async () => {
 
 onMounted(fetchAll);
 
-// Watchers to update map
 watch([addresses, suggestedRoute, selectedAddressIds, visibleRoutes, showUnassigned], () => {
   updateMarkers();
 }, { deep: true });
 
-const toggleRouteVisibility = (vId: string, rId: string) => {
-  const key = `${vId}-${rId}`;
-  if (visibleRoutes.value.has(key)) visibleRoutes.value.delete(key);
-  else visibleRoutes.value.add(key);
-};
-
-const toggleAllVisible = () => {
-  const allShown = Object.keys(groupedRoutes.value).every(vId => 
-    groupedRoutes.value[vId].every(r => visibleRoutes.value.has(`${vId}-${r.route_id}`))
-  ) && showUnassigned.value;
-
-  if (allShown) {
-    visibleRoutes.value.clear();
-    showUnassigned.value = false;
-  } else {
-    Object.keys(groupedRoutes.value).forEach(vId => {
-      groupedRoutes.value[vId].forEach(r => visibleRoutes.value.add(`${vId}-${r.route_id}`));
-    });
-    showUnassigned.value = true;
-  }
-};
-
-const isEverythingVisible = computed(() => {
-  const routesCount = Object.values(groupedRoutes.value).flat().length;
-  return (visibleRoutes.value.size >= routesCount) && showUnassigned.value;
-});
 
 const toggleAddress = (id: string) => {
   const index = selectedAddressIds.value.indexOf(id);
@@ -333,9 +301,9 @@ const assignRoute = async () => {
       veiculo_id: selectedVehicleId.value,
       endereco_ids: suggestedRoute.value.map(a => a.id),
       route_id: newRouteId,
-      total_distance_km: totalDistance.value || 0
+      total_distance_km: totalDistance.value || 0,
+      geometry: routeGeometry.value
     });
-    // Cache the geometry we just used so it stays on map
     routesGeometryCache.value[`${selectedVehicleId.value}-${newRouteId}`] = routeGeometry.value;
     
     suggestedRoute.value = null;
@@ -385,24 +353,6 @@ const cancelRoute = async (vId: string, rId: string) => {
   );
 };
 
-const completeRoute = async (vId: string, rId: string) => {
-  openModal(
-    'Concluir Rota',
-    'Deseja marcar todas as paradas desta rota como concluídas?',
-    async () => {
-      loading.value = true;
-      try {
-        const routeAddrs = addresses.value.filter(a => a.vehicle_id === vId && a.route_id === rId);
-        await Promise.all(routeAddrs.map(a => 
-          axios.patch(`${MANAGEMENT_URL}/addresses/${a.id}`, {
-            address: { status: 'concluido' }
-          })
-        ));
-        await fetchAll();
-      } catch (err) { console.error(err); } finally { loading.value = false; }
-    }
-  );
-};
 
 const updateStopStatus = async (addr: Address, status: string) => {
   loading.value = true;
@@ -452,9 +402,8 @@ const startSimulation = async (vId: string, rId: string) => {
   simulatingRoutes.value.add(routeKey);
   const stops = routeData.addresses;
   const geometry = routesGeometryCache.value[routeKey];
-  const coords = geometry.coordinates; // OSRM returns [lon, lat]
+  const coords = geometry.coordinates;
 
-  // Pre-calculate arrival index for each stop (closest point on the line)
   const stopArrivalIndices = stops.map(stop => {
     let closestIdx = 0;
     let minDict = Infinity;
@@ -468,11 +417,9 @@ const startSimulation = async (vId: string, rId: string) => {
     return { stopId: stop.id, arrivalIdx: closestIdx };
   });
 
-  // Initialize statuses
   stops.forEach(s => simulatedStopStatuses.value[s.id] = 'Aguardando');
   if (stops[0]) simulatedStopStatuses.value[stops[0].id] = 'A caminho';
 
-  // Create vehicle marker
   const vehicleIcon = L.divIcon({
     className: 'vehicle-marker',
     html: '<div class="moving-truck">🚚</div>',
@@ -496,7 +443,6 @@ const startSimulation = async (vId: string, rId: string) => {
     const [lon, lat] = coords[currentCoordIdx];
     marker.setLatLng([lat, lon]);
 
-    // Index-based logic: Check if we reached the pre-calculated stop point
     const target = stopArrivalIndices[currentStopIdx];
     if (target) {
       if (currentCoordIdx >= target.arrivalIdx) {
@@ -509,7 +455,6 @@ const startSimulation = async (vId: string, rId: string) => {
           simulatedStopStatuses.value[stops[currentStopIdx].id] = 'A caminho';
         }
       } else if (target.arrivalIdx - currentCoordIdx < 15) {
-        // 15 coordinate steps before the stop
         simulatedStopStatuses.value[stops[currentStopIdx].id] = 'Proxima Parada';
       }
     }
@@ -527,19 +472,6 @@ const canCalculate = computed(() => {
   return selectedVehicleId.value && selectedAddressIds.value.length > 0 && !loading.value && !isOverCapacity.value;
 });
 
-const currentlySimulatedRoute = computed(() => {
-  if (simulatingRoutes.value.size === 0) return null;
-  const routeId = Array.from(simulatingRoutes.value)[0];
-  for (const vId in groupedRoutes.value) {
-    const route = groupedRoutes.value[vId].find(r => r.route_id === routeId);
-    if (route) return { ...route, vehicle_plate: vehicles.value.find(v => v.id === vId)?.plate };
-  }
-  return null;
-});
-
-const getVehiclePlate = (id: string) => {
-  return vehicles.value.find(v => v.id === id)?.plate || 'N/A';
-};
 </script>
 
 <template>
@@ -580,14 +512,11 @@ const getVehiclePlate = (id: string) => {
     </div>
 
     <div class="dashboard-grid">
-      <!-- Coluna Principal: Mapa -->
       <main class="card !p-0 overflow-hidden map-area">
         <div ref="mapContainer" class="map-container"></div>
       </main>
 
-      <!-- Coluna Lateral -->
       <div class="side-panels">
-        <!-- 1. Pontos Disponíveis -->
         <aside class="card">
           <h2 class="section-title"><MapPin :size="14" /> Pendentes</h2>
           <div class="item-list">
@@ -607,7 +536,6 @@ const getVehiclePlate = (id: string) => {
           </div>
         </aside>
 
-        <!-- 2. Seleção de Veículo -->
         <aside class="card">
           <h2 class="section-title"><Truck :size="14" /> Veículo da Rota</h2>
           <div class="item-list">
@@ -623,10 +551,9 @@ const getVehiclePlate = (id: string) => {
 
     </div>
 
-    <!-- Monitor de Operações (Lista Grande Embaixo) -->
     <div class="monitor-section">
       <template v-for="v in vehicles" :key="v.id">
-        <div v-for="(route, idx) in groupedRoutes[v.id]" :key="route.route_id" class="card mb-4">
+        <div v-for="(route) in groupedRoutes[v.id]" :key="route.route_id" class="card mb-4">
           <div class="flex justify-between items-center mb-4">
             <h2 class="section-title mb-0 flex items-center gap-2">
               <Truck :size="18" class="text-primary" /> 

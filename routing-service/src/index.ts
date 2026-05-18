@@ -53,7 +53,6 @@ interface Address {
   street: string;
 }
 
-// Endpoint to calculate suggested order
 app.post('/rotas/calcular', async (req: Request, res: Response) => {
   try {
     const { veiculo_id, endereco_ids, optimized } = req.body;
@@ -63,7 +62,6 @@ app.post('/rotas/calcular', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing veiculo_id or endereco_ids' });
     }
 
-    // Fetch address details from Management Service
     const addressesResponse = await axios.get(`${MANAGEMENT_SERVICE_URL}/addresses`, {
       headers: authHeader ? { 'Authorization': authHeader } : {}
     });
@@ -76,7 +74,6 @@ app.post('/rotas/calcular', async (req: Request, res: Response) => {
     let actualDistanceKm = 0;
     
     if (req.body.optimized && selectedAddresses.length > 0) {
-      // Multi-start Nearest Neighbor
       let bestRoute: Address[] = [];
       let minTotalDistance = Infinity;
 
@@ -97,7 +94,6 @@ app.post('/rotas/calcular', async (req: Request, res: Response) => {
           currentRoute.push(current);
         }
 
-        // 2-opt Refinement
         let improved = true;
         while (improved) {
           improved = false;
@@ -115,7 +111,6 @@ app.post('/rotas/calcular', async (req: Request, res: Response) => {
                          calculateDistance(Number(p_i1.latitude), Number(p_i1.longitude), Number(p_j1.latitude), Number(p_j1.longitude));
               
               if (d2 < d1) {
-                // Reverse sub-route
                 const sub = currentRoute.splice(i + 1, j - i);
                 currentRoute.splice(i + 1, 0, ...sub.reverse());
                 improved = true;
@@ -135,7 +130,6 @@ app.post('/rotas/calcular', async (req: Request, res: Response) => {
       orderedStops = [...selectedAddresses].sort((a, b) => Number(a.latitude) - Number(b.latitude));
     }
 
-    // Fetch Street-level Route from OSRM
     if (orderedStops.length > 1) {
       try {
         const coords = orderedStops.map(s => `${s.longitude},${s.latitude}`).join(';');
@@ -148,7 +142,6 @@ app.post('/rotas/calcular', async (req: Request, res: Response) => {
         }
       } catch (osrmError) {
         console.error('OSRM API Error:', osrmError);
-        // Fallback to straight lines if OSRM fails
         actualDistanceKm = getRouteDistance(orderedStops);
       }
     }
@@ -165,32 +158,29 @@ app.post('/rotas/calcular', async (req: Request, res: Response) => {
   }
 });
 
-// Endpoint to assign route and update status
 app.post('/rotas/atribuir', async (req: Request, res: Response) => {
   try {
-    const { veiculo_id, endereco_ids, route_id, total_distance_km } = req.body;
+    const { veiculo_id, endereco_ids, route_id, total_distance_km, geometry } = req.body;
     const authHeader = req.headers['authorization'];
     const headers = authHeader ? { 'Authorization': authHeader } : {};
 
-    // Update each address in Management Service
     const updatePromises = endereco_ids.map((id: string, index: number) => 
       axios.patch(`${MANAGEMENT_SERVICE_URL}/addresses/${id}`, {
         address: {
           status: 'em rota',
           vehicle_id: veiculo_id,
           route_id: route_id,
-          sequence_number: index + 1 // Save the sequence order
+          sequence_number: index + 1
         }
       }, { headers })
     );
 
     await Promise.all(updatePromises);
 
-    // Save to Local Routing Database
     try {
       await pool.query(
-        'INSERT INTO routes (id, vehicle_id, total_distance_km) VALUES ($1, $2, $3)',
-        [route_id, veiculo_id, total_distance_km || 0]
+        'INSERT INTO routes (id, vehicle_id, total_distance_km, geometry) VALUES ($1, $2, $3, $4)',
+        [route_id, veiculo_id, total_distance_km || 0, geometry ? JSON.stringify(geometry) : null]
       );
       
       const stopPromises = endereco_ids.map((id: string, idx: number) => 
@@ -202,13 +192,21 @@ app.post('/rotas/atribuir', async (req: Request, res: Response) => {
       await Promise.all(stopPromises);
     } catch (dbError) {
       console.error('Error saving to routing DB:', dbError);
-      // We don't fail the request if local DB fails, but log it
     }
 
     res.json({ message: 'Route assigned successfully and statuses updated' });
   } catch (error: any) {
     console.error('Error assigning route:', error.message);
     res.status(500).json({ error: 'Failed to assign route' });
+  }
+});
+
+app.get('/rotas', async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query('SELECT id, vehicle_id, total_distance_km, geometry FROM routes');
+    res.json(result.rows);
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to fetch routes' });
   }
 });
 

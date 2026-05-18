@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import axios from 'axios';
-import { BarChart3, Truck, Package, Navigation, TrendingUp } from 'lucide-vue-next';
+import { Truck, Navigation, TrendingUp, CheckCircle } from 'lucide-vue-next';
 
 const vehicles = ref<any[]>([]);
 const addresses = ref<any[]>([]);

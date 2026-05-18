@@ -1,61 +1,40 @@
-# RoterizaTrack - Mini Roteirizador de Entregas
+# RoterizaTrack - Sistema de Roteirização Logística
 
-Este é um sistema simplificado de roteirização de entregas, desenvolvido como parte de um teste técnico para Desenvolvedor Junior. O projeto utiliza uma arquitetura de microserviços totalmente conteinerizada.
+Uma plataforma conteinerizada de gestão de frota e roteirização inteligente de entregas. O RoterizaTrack permite que operações logísticas organizem endereços pendentes, visualizem-os geograficamente no mapa e calculem a melhor rota otimizada para seus veículos, simulando em tempo real o trajeto da entrega.
 
-## 🚀 Arquitetura
+## 🚀 Setup com Docker Compose
 
-O sistema é composto por três serviços principais:
+O projeto foi inteiramente desenhado para rodar em containers Docker, tornando sua inicialização extremamente simples em qualquer sistema operacional.
 
-1.  **Management Service (Ruby on Rails)**:
-    *   API RESTful para gestão de Endereços, Veículos e Motoristas.
-    *   Persistência: PostgreSQL.
-    *   Utiliza UUIDs para identificação de recursos.
+**Pré-requisitos**:
+- [Docker](https://docs.docker.com/get-docker/) instalado.
+- [Docker Compose](https://docs.docker.com/compose/install/) instalado.
 
-2.  **Routing Service (Node.js + TypeScript)**:
-    *   API RESTful para processamento e cálculo de rotas.
-    *   **Endpoint `/rotas/calcular`**: Ordena endereços com base em coordenadas (Latitude/Longitude).
-    *   **Endpoint `/rotas/atribuir`**: Atualiza o status dos endereços no Management Service via chamadas HTTP internas.
+**Instruções Claras de Setup**:
+1. Clone este repositório para a sua máquina local.
+2. Na raiz do projeto, abra seu terminal e execute o comando de inicialização:
+   ```bash
+   docker-compose up --build
+   ```
+3. O Docker fará o download das imagens, instalará dependências (Gems e NPM) e iniciará os bancos de dados. Aguarde o Docker finalizar a construção das imagens e o aviso de que as APIs estão online.
+   *(Nota: As migrations do banco do Management Service e o processo de seed que preenche os dados iniciais rodarão de forma automática no boot)*.
+4. Acesse a aplicação no seu navegador:
+   - **Frontend (Interface do Usuário)**: [http://localhost:5173](http://localhost:5173) 
+     *(Para entrar, utilize `admin@roterizatrack.com` com a senha `password123` ou crie uma nova conta clicando em "Criar conta")*.
+   - **Management API (Backend Rails)**: `http://localhost:3000`
+   - **Routing API (Backend Node.js)**: `http://localhost:3001`
 
-3.  **Frontend (Vue 3 + TypeScript)**:
-    *   SPA moderna construída com Vite.
-    *   Interface premium com design focado em UX (Glassmorphism, Micro-animações).
-    *   Permite a seleção de endereços e veículos, visualização de rotas sugeridas e atribuição de rotas.
+## 🛠️ Decisões de Design e Escolhas Técnicas Relevantes
 
-## 🛠️ Tecnologias Utilizadas
+- **Arquitetura de Microserviços**: O projeto é dividido em um serviço principal de gestão de entidades e usuários em **Ruby on Rails** (trazendo o padrão de modelagem ActiveRecord e segurança inerente do Rails), e um microsserviço veloz e escalável dedicado apenas para os cálculos de rotas feito em **Node.js com TypeScript** e Express.
+- **Segurança com JWT**: As rotas e requisições do sistema são protegidas com JSON Web Tokens (JWT). Apenas usuários autenticados via Login conseguem ler, criar endereços ou ordenar veículos.
+- **Integração Real de Mapeamento Geográfico**: O front usa `Leaflet.js` debaixo dos panos para um rendering customizado e leve, integrado às APIs abertas `OpenStreetMap (Nominatim)` para geocodificação de Endereço/CEP para Lat/Lon, e `OSRM (Open Source Routing Machine)` para desenhar a geometria (polígono) literal do caminho no asfalto.
+- **Algoritmo de Otimização no Backend**: O backend (`routing-service`) possui heurísticas como *"Multi-Start Nearest Neighbor"* combinada com o refinamento *"2-opt"*, rodando as aproximações por distâncias puras (Fórmula de Haversine) para entregar o trajeto mais rápido possível, poupando as requisições à API pública de mapa.
+- **Design de Interface Premium (Aesthetics)**: O Frontend utiliza **Vue.js 3** e componentes customizados sem frameworks engessados. A atenção especial foi dada à UX e UI com Glassmorphism, temas visuais (Dark/Light mode via CSS Variables), grid maps fluidos e micro-animações state-of-the-art para dar a sensação de um SaaS de excelência.
+- **Persistência de Cachê e Redes Docker**: Para que a tela não perca a geometria ao atualizar, o microserviço Node salva a string GeoJSON num BD e é listada pelas chamadas do frontend, tornando-se imune à limite de taxas do OSM. Ambos os microsserviços se comunicam internamente na mesma rede docker.
 
-*   **Backend**: Ruby on Rails, Node.js, Express, TypeScript.
-*   **Frontend**: Vue 3, Vite, Lucide Icons.
-*   **Banco de Dados**: PostgreSQL (Instâncias isoladas para cada serviço).
-*   **Infraestrutura**: Docker, Docker Compose.
+## 🚀 Melhorias Futuras (Opcional)
 
-## 📦 Como Rodar a Aplicação
-
-Certifique-se de ter o **Docker** e o **Docker Compose** instalados em sua máquina.
-
-1.  Clone o repositório.
-2.  Na raiz do projeto, execute o comando:
-    ```bash
-    docker-compose up --build
-    ```
-3.  O Docker Compose irá:
-    *   Subir os bancos de dados PostgreSQL.
-    *   Compilar as imagens dos microserviços.
-    *   Rodar as migrações e o seed do banco de dados (Management Service).
-4.  Acesse as aplicações:
-    *   **Frontend**: [http://localhost:5173](http://localhost:5173)
-    *   **Management API**: [http://localhost:3000](http://localhost:3000)
-    *   **Routing API**: [http://localhost:3001](http://localhost:3001)
-
-## 📝 Decisões Técnicas
-
-*   **Comunicação**: O Frontend consome ambos os serviços. O Routing Service comunica-se internamente com o Management Service usando o nome do host do container (`http://management-service:3000`).
-*   **CORS**: Configurado em ambos os backends para permitir a comunicação com o frontend.
-*   **Design**: Optei por um design escuro (Dark Mode) com gradientes modernos para proporcionar uma experiência de usuário premium.
-*   **Lógica de Rota**: Implementada uma lógica simples de ordenação por coordenadas geográficas para demonstrar a manipulação de dados e integração entre serviços.
-
-## 🚀 Melhorias Futuras
-
-*   Implementação de testes unitários e de integração (RSpec/Jest).
-*   Integração com APIs reais de mapas (Leaflet/Google Maps).
-*   Algoritmos de otimização de rota mais complexos (Problema do Caixeiro Viajante).
-*   Autenticação e Autorização (JWT).
+- **Comunicação em Tempo Real via WebSockets**: Migrar de consultas via REST/pooling para uma integração com ActionCable ou Socket.io que reflete o andamento da entrega (simulação do caminhão) instantaneamente para todos os gestores logados.
+- **Testes Abrangentes**: Ampliar a suíte de testes com RSpec no backend e testes end-to-end com Cypress no Vue.js.
+- **Tolerância a Falhas**: Implementar "Circuit Breakers" na comunicação com as APIs públicas gratuitas (ViaCEP/OSRM/Nominatim). Se por ventura os serviços deles saírem do ar, o sistema utilizará um fallback 100% off-line (linhas retas).

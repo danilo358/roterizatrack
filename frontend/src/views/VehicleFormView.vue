@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
-import { Truck, Save, ArrowLeft } from 'lucide-vue-next';
+import { Save, ArrowLeft } from 'lucide-vue-next';
 
 const router = useRouter();
 const loading = ref(false);
@@ -15,7 +15,7 @@ const form = ref({
 
 const handlePlateInput = (event: Event) => {
   const target = event.target as HTMLInputElement;
-  // Remove special characters, keep only letters and numbers
+  // Remove caracteres especiais, mantenha apenas letras e números
   let raw = target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
   let formatted = '';
 
@@ -148,10 +148,18 @@ input:focus {
   gap: 0.5rem;
   cursor: pointer;
   font-weight: 600;
+  position: fixed;
+  top: 2rem;
+  left: calc(var(--sidebar-width) + 2rem);
+  z-index: 50;
 }
 
 .btn-text:hover {
   color: var(--text);
+}
+
+.title {
+  margin-left: 6rem;
 }
 
 .mt-6 { margin-top: 1.5rem; }

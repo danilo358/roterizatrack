@@ -2,27 +2,36 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
-import { LogIn, Lock, Mail, Loader2 } from 'lucide-vue-next';
+import { LogIn, Lock, Mail, Loader2, User } from 'lucide-vue-next';
 
 const router = useRouter();
-const email = ref('admin@roterizatrack.com');
-const password = ref('password123');
+const name = ref('');
+const email = ref('');
+const password = ref('');
+const passwordConfirmation = ref('');
 const loading = ref(false);
 const error = ref('');
 
-const handleLogin = async () => {
+const handleRegister = async () => {
+  if (password.value !== passwordConfirmation.value) {
+    error.value = 'As senhas não coincidem';
+    return;
+  }
+  
   loading.value = true;
   error.value = '';
   try {
-    const res = await axios.post('http://localhost:3000/auth/login', {
+    const res = await axios.post('http://localhost:3000/auth/register', {
+      name: name.value,
       email: email.value,
-      password: password.value
+      password: password.value,
+      password_confirmation: passwordConfirmation.value
     });
     
     localStorage.setItem('user', JSON.stringify(res.data));
     router.push('/');
   } catch (err: any) {
-    error.value = err.response?.data?.error || 'Erro ao fazer login';
+    error.value = err.response?.data?.error?.join(', ') || 'Erro ao fazer cadastro';
   } finally {
     loading.value = false;
   }
@@ -36,13 +45,21 @@ const handleLogin = async () => {
         <div class="logo">
           <img src="/favicon.png" alt="Logo" class="logo-img" />
         </div>
-        <h1>RoterizaTrack</h1>
-        <p>Logística inteligente e simplificada</p>
+        <h1>Criar Conta</h1>
+        <p>Junte-se à logística inteligente</p>
       </div>
 
-      <form @submit.prevent="handleLogin" class="login-form">
+      <form @submit.prevent="handleRegister" class="login-form">
         <div v-if="error" class="error-badge mb-4">{{ error }}</div>
         
+        <div class="form-group">
+          <label>Nome</label>
+          <div class="input-icon">
+            <User :size="20" />
+            <input v-model="name" type="text" required placeholder="Seu Nome" />
+          </div>
+        </div>
+
         <div class="form-group">
           <label>Email</label>
           <div class="input-icon">
@@ -59,15 +76,23 @@ const handleLogin = async () => {
           </div>
         </div>
 
+        <div class="form-group">
+          <label>Confirmar Senha</label>
+          <div class="input-icon">
+            <Lock :size="20" />
+            <input v-model="passwordConfirmation" type="password" required placeholder="••••••••" />
+          </div>
+        </div>
+
         <button type="submit" class="btn btn-primary w-full" :disabled="loading">
           <Loader2 v-if="loading" class="animate-spin" :size="20" />
           <LogIn v-else :size="20" />
-          {{ loading ? 'Entrando...' : 'Entrar' }}
+          {{ loading ? 'Cadastrando...' : 'Cadastrar' }}
         </button>
       </form>
       
       <div class="login-footer">
-        <p class="mt-2">Não tem uma conta? <router-link to="/register" class="link">Criar conta</router-link></p>
+        <p>Já tem uma conta? <router-link to="/login" class="link">Faça login</router-link></p>
       </div>
     </div>
   </div>
@@ -94,7 +119,7 @@ const handleLogin = async () => {
 
 .login-header {
   text-align: center;
-  margin-bottom: 3rem;
+  margin-bottom: 2.5rem;
 }
 
 .logo {
@@ -188,9 +213,19 @@ const handleLogin = async () => {
 .login-footer {
   margin-top: 2.5rem;
   text-align: center;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   font-weight: 500;
   color: var(--text-muted);
+}
+
+.link {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.link:hover {
+  text-decoration: underline;
 }
 
 .animate-spin {
@@ -204,15 +239,4 @@ const handleLogin = async () => {
 
 .w-full { width: 100%; }
 .mb-4 { margin-bottom: 1rem; }
-.mt-2 { margin-top: 0.5rem; }
-
-.link {
-  color: var(--primary);
-  text-decoration: none;
-  font-weight: 700;
-}
-
-.link:hover {
-  text-decoration: underline;
-}
 </style>

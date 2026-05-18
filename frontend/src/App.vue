@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router';
-import { Map, Plus, Truck, MapPin, BarChart3, LogOut, Sun, Moon } from 'lucide-vue-next';
-import { computed, ref, onMounted } from 'vue';
+import { Map, Plus, BarChart3, LogOut, Sun, Moon } from 'lucide-vue-next';
+import { computed } from 'vue';
 
 import { theme, toggleTheme } from './store/theme';
 
